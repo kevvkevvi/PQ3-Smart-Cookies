@@ -14,12 +14,14 @@ import math
 import itertools
 import statistics
 
-from azure.cognitiveservices.search.websearch import WebSearchAPI
-from msrest.authentication import CognitiveServicesCredentials
 import inflect
 import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
+
+
+import recipe_markov
+import food2vec
 
 # Opens both the translation and substitution data.
 with open('translation_dict2.json', 'r') as json_file:
@@ -27,11 +29,15 @@ with open('translation_dict2.json', 'r') as json_file:
 with open('sub_dict2.json', 'r') as json_file:
     SUB_DATA = json.load(json_file)
 
+UT = food2vec.Word2VecUtils()
+
 # Microsoft Azure subscription key for
 SUBSCRIPTION_KEY = "f4451d41dab44995b84a8475ba8ec1b5"
 WORD_EMBED_VALS = np.load('ingred_word_emb.npy', allow_pickle=True).item()
 INGRED_CATEGORIES = np.load('ingred_categories.npy', allow_pickle=True).item()
 INGREDIENT_LIST = sorted(WORD_EMBED_VALS.keys())
+
+
 
 def similarity(ing_1, ing_2):
     """Returns the similarity between two ingredients based on our data."""
@@ -197,6 +203,22 @@ class Recipe:
                 print("Error: category not found in the recipe.")
                 return None
 
+    def food2vec_score(self):
+        """
+        This function essentially takes a recipe and performs a Bing search on
+        all of the ingredients, and we want to get the count of the number of
+        results we get - higher number of results probably means that the recipe
+        uses a known good combination of ingredients.
+
+        Arguments:
+            recipe: The recipe to be evaluated.
+        """
+        query = []
+        for ingredient, _ in itertools.chain.from_iterable(self.recipe_dict.values()):
+            query.append(str(ingredient))
+
+        return UT.food2vec_score(query)
+
     def result_score(self):
         """
         This function essentially takes a recipe and performs a Bing search on
@@ -207,16 +229,10 @@ class Recipe:
         Arguments:
             recipe: The recipe to be evaluated.
         """
-        # Instantiates the web search client.
-        client = WebSearchAPI(CognitiveServicesCredentials(SUBSCRIPTION_KEY))
-
-        # Generate the query string that we will search for.
-        query_string = "cookie with "
+        query = []
         for ingredient, _ in itertools.chain.from_iterable(self.recipe_dict.values()):
-            query_string += str(ingredient) + " "
-        web_data = client.web.search(query=query_string)
-        # Return how many Bing matches there are for the query.
-        return web_data.web_pages.total_estimated_matches
+            query.append(str(ingredient))
+        return recipe_markov.get_probability(query)
 
     def pair_score(self):
         """
@@ -268,12 +284,12 @@ class Recipe:
                     str(ingredient)))
             if translation:
                 if translation == "kiwi fruit":
-                    return -float("inf"), -float("inf")
+                    return float("inf"), -float("inf"), -float("inf")
 
                 if SUB_DATA[translation]["category"] in banned_categories:
-                    return -float("inf"), -float("inf")
+                    return float("inf"), -float("inf"), -float("inf")
 
-        return self.result_score(), self.pair_score()
+        return self.result_score(), self.pair_score(), self.food2vec_score()
 
     @staticmethod
     def get_ingredient_string(ingredient=None):
@@ -296,7 +312,7 @@ class Recipe:
             for combo in itertools.combinations(string, i):
                 if SUB_DATA.get(" ".join(combo)):
                     return " ".join(combo)
-        return str(ingredient)
+        return None
 
     @staticmethod
     def substitution(ingredient=None):
@@ -320,8 +336,31 @@ class Recipe:
                 return Ingredient(sub)
 
             return ingredient
-
         return ingredient
+
+
+    def mystery_ingredient(self):
+        """
+        This method makes it possible for the recipe to add in a mysterious
+        ingredient.
+        """
+        teehee_specialtreats = ["tapioca", "egg pudding", "red bean", "crushed oreos"]
+        add = random.randint(1, 10)
+        if add == 1:
+            treat = random.randint(0, 4)
+            if treat > 3:
+                # Get an ingredient using the food2vec model.
+                query = []
+                for ingredient, _ in itertools.chain.from_iterable(self.recipe_dict.values()):
+                    query.append(str(ingredient))
+
+                ingredient, _ = UT.get_new_ingredient(query)
+            else:
+                ingredient = teehee_specialtreats[treat]
+            self.add_ingredient("misc", ingredient.lower(), Amount(5))
+
+
+
 
     def new_recipe_combo(self, other_recipe):
         """
@@ -388,7 +427,7 @@ class Recipe:
                     ingredient, amount = list(
                         other_recipe.recipe_dict[category])[ingredient_index]
                     recipe_combo.add_ingredient(category, ingredient, amount)
-
+        self.mystery_ingredient()
         return recipe_combo
 
 
@@ -420,6 +459,7 @@ class Recipe:
         Arguments:
             title: The title of the recipe we want.
         """
+        copy_dict = self.recipe_dict
         output = ""
         output += "# {0}\n\n".format(title)
         output += "## INGREDIENTS\n"
@@ -427,19 +467,18 @@ class Recipe:
         output += "## METHOD\n"
         output += "1. Preheat oven to {0} degrees F\n".format(random.randint(325, 375))
         output += "2. Cream together the {0} until smooth\n".format(
-            ", ".join([str(i[0]) for i in self.recipe_dict["fats"]\
-            + self.recipe_dict['sweeten']]))
+            ", ".join([str(i[0]) for i in copy_dict.pop("fatsoils", [])\
+            + copy_dict.pop("sweeten", [])]))
         output += "3. Beat in the {0} one at a time, then stir in the {1}\n".format(
-            ", ".join([str(i[0]) for i in self.recipe_dict["eggs"]]),
-            ", ".join([str(i[0]) for i in self.recipe_dict["extracts"]]))
+            ", ".join([str(i[0]) for i in copy_dict.pop("eggs", [])]),
+            ", ".join([str(i[0]) for i in copy_dict.pop("extracts", [])]))
         output += "4. Dissolve the {0} with hot water, then add to batter along with {1}\n".format(
-            ", ".join([str(i[0]) for i in self.recipe_dict["leaven"]]),
-            ", ".join([str(i[0]) for i in self.recipe_dict["salt"]]))
+            ", ".join([str(i[0]) for i in copy_dict.pop("leaven", [])]),
+            ", ".join([str(i[0]) for i in copy_dict.pop("salt", [])]))
+        copy_dict = self.recipe_dict
+
         output += "5. Stir in {0}\n".format(
-            ", ".join([str(i[0]) for i in self.recipe_dict["flour"] \
-             + self.recipe_dict["chocvan"] \
-             + self.recipe_dict["dairyoth"] \
-             + self.recipe_dict.get("misc", [])]))
+            ", ".join([str(i[0][0]) for i in copy_dict.values()]))
         output += "6. Spoon mixture onto a greased baking tray\n"
         output += "7. Bake for {0} minutes or until golden brown\n".format(random.randint(10, 15))
 
@@ -453,8 +492,11 @@ class Recipe:
 
         for _, arr in self.recipe_dict.items():
             for ingredient, amount in arr:
-                output += "\t{0} {1}\n".format(str(amount),
-                                               str(ingredient))
+                if amount.get_num() < 0:
+                    output += "\ta pinch of {0}\n".format(str(ingredient))
+                else:
+                    output += "\t{0} {1}\n".format(str(amount),
+                                                   str(ingredient))
         return output
 
     def __repr__(self):
@@ -557,29 +599,36 @@ def recipe_rankings(recipe_list):
     result_scores = []
     #a list containing tuples in the form of (recipe, pair_score)
     pair_scores = []
+    #a list containing tuples in the form of (recipe, food2vec_score)
+    food2vec_scores = []
     #a list containing the final rankings of the recipes via fitness level
     final_rankings = []
     #popularizing recipe_scores
-    recipe_scores = Parallel(n_jobs=-1)(delayed(get_fitness)(recipe) for recipe in recipe_list)
-#    for i in range(len(recipe_list)):
-#        recipe_scores[recipe_list[i]] = recipe_list[i].fitness_level()
+    recipe_scores = Parallel(n_jobs=-1,
+                             backend="multiprocessing")(delayed
+                                                        (get_fitness)(recipe)
+                                                        for recipe in
+                                                        recipe_list)
+
     recipe_scores = dict(recipe_scores)
     #popularizing result_scores and pair_scores
     for recipe, fitnesspair in recipe_scores.items():
         result_scores.append((recipe, fitnesspair[0]))
         pair_scores.append((recipe, fitnesspair[1]))
+        food2vec_scores.append((recipe, fitnesspair[2]))
     #sort the two scores via descending order, because the higher the score,
     #the smaller your index is.
-    result_scores.sort(key=lambda x: x[1], reverse=True)
+    result_scores.sort(key=lambda x: x[1], reverse=False)
     pair_scores.sort(key=lambda x: x[1], reverse=True)
-
+    food2vec_scores.sort(key=lambda x: x[1], reverse=True)
     #iterating through the recipes and finding their rankings in each
     #ranking list, and adding the indices together. Append the recipe
     #and its final_ranking to the final_rankings list.
     for recipe in recipe_scores.keys():
         result_ranking = [pair[0] for pair in result_scores].index(recipe)
         pair_ranking = [pair[0] for pair in pair_scores].index(recipe)
-        final_ranking = result_ranking + pair_ranking
+        food2vec_ranking = [pair[0] for pair in food2vec_scores].index(recipe)
+        final_ranking = result_ranking + pair_ranking + food2vec_ranking
         final_rankings.append((recipe, final_ranking))
     #sort final_rankings
     final_rankings.sort(key=lambda x: x[1])
