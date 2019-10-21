@@ -5,5 +5,6 @@ This project uses cookie recipes on the internet to generate a selection of new,
 
 # How to Run
 1. Pip install inflect, nympy, joblib, and tqdm on your terminal
-2. Run program under the format: python3.7 cookie_generation.py [number of iterations] [name of save file]
-3. Enjoy baking!
+2. Run program under the format: python3.7 cookie_generation.py [number of iterations] [name of save file] (recommended 50 iterations)
+3. Open saved file in Markdown format.
+4. Enjoy baking!
