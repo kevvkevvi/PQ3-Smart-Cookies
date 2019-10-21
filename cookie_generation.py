@@ -31,8 +31,7 @@ with open('sub_dict2.json', 'r') as json_file:
 
 UT = food2vec.Word2VecUtils()
 
-# Microsoft Azure subscription key for
-SUBSCRIPTION_KEY = "f4451d41dab44995b84a8475ba8ec1b5"
+
 WORD_EMBED_VALS = np.load('ingred_word_emb.npy', allow_pickle=True).item()
 INGRED_CATEGORIES = np.load('ingred_categories.npy', allow_pickle=True).item()
 INGREDIENT_LIST = sorted(WORD_EMBED_VALS.keys())
