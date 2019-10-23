@@ -204,13 +204,9 @@ class Recipe:
 
     def food2vec_score(self):
         """
-        This function essentially takes a recipe and performs a Bing search on
-        all of the ingredients, and we want to get the count of the number of
-        results we get - higher number of results probably means that the recipe
-        uses a known good combination of ingredients.
-
-        Arguments:
-            recipe: The recipe to be evaluated.
+        This function essentially takes a recipe and performs food2vec on
+        all of the ingredients, and returns the score that the food2vec
+        model gives.
         """
         query = []
         for ingredient, _ in itertools.chain.from_iterable(self.recipe_dict.values()):
@@ -220,13 +216,10 @@ class Recipe:
 
     def result_score(self):
         """
-        This function essentially takes a recipe and performs a Bing search on
-        all of the ingredients, and we want to get the count of the number of
-        results we get - higher number of results probably means that the recipe
-        uses a known good combination of ingredients.
-
-        Arguments:
-            recipe: The recipe to be evaluated.
+        This function essentially takes a recipe which has its ingredients listed
+        in alphabetical order and performs a one order Markov Chain to determine
+        the popularity of the ingredients in the recipe. We therefore generate a
+        score to show how popular the ingredients are together.
         """
         query = []
         for ingredient, _ in itertools.chain.from_iterable(self.recipe_dict.values()):
@@ -267,8 +260,8 @@ class Recipe:
         This fitness function does two things. It first checks all of the
         ingredients to see whether there are any prohibited ingredients (kiwi,
         alcohol or nuts), and will return a score of -inf if that's the case.
-        Else it will use a two-pronged strategy of multiplying the amount of
-        Bing results we get for the recipe by the similarity score.
+        Else it will use a two-pronged strategy of multiplying the food2vec model
+        score with the result score to get a fitness_level score.
         """
         i_engine = inflect.engine()
         banned_categories = ["nuts", "seeds", "liquor", "liqueurs", "brandy",
