@@ -161,6 +161,6 @@ for url in tqdm(URL_LIST):
                     ing_amount = -1.0
         recipe.append((ingredient, ing_amount))
     INSPIRING_SET.append(recipe)
-print(INSPIRING_SET)
+    
 with open("inspiring_set.json", "w") as f:
     json.dump(INSPIRING_SET, f)
